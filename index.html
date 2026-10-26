@@ -243,7 +243,7 @@ body {
   transition: color .15s;
 }
 .entry-del-btn:active { color: #ff3b30; }
-.entry-top { display: flex; justify-content: space-between; align-items: center; margin-bottom: 2px; }
+.entry-top { display: flex; justify-content: space-between; align-items: center; margin-bottom: 2px; padding-right: 28px; }
 .entry-proj { font-size: 15px; font-weight: 600; }
 .entry-hrs { font-size: 15px; color: var(--btn); font-weight: 700; }
 .entry-meta { font-size: 13px; color: var(--hint); }
@@ -506,7 +506,7 @@ body {
         <div id="chart-inner"><div class="empty"><p>Нет данных</p></div></div>
       </div>
 
-      <p class="sec-title">Последние записи</p>
+      <p class="sec-title">Записи</p>
       <div class="card" id="entries-list">
         <div class="empty"><p>Нет записей</p></div>
       </div>
@@ -874,12 +874,13 @@ function renderAnalytics() {
     `).join('');
   }
 
-  // Entries list (last 15)
+  // Entries list — сортировка по дате, новые сверху
   const listEl = document.getElementById('entries-list');
   if (!filtered.length) {
     listEl.innerHTML = '<div class="empty"><p>Нет записей за период</p></div>';
   } else {
-    listEl.innerHTML = filtered.slice(0,15).map((e, i) => `
+    const sortedEntries = [...filtered].sort((a,b) => new Date(b.date) - new Date(a.date));
+    listEl.innerHTML = sortedEntries.map((e, i) => `
       <div class="entry-item" data-entry-idx="${i}" style="position:relative;">
         <div class="entry-top">
           <span class="entry-proj">${esc(e.project)}</span>
@@ -896,7 +897,7 @@ function renderAnalytics() {
       const btn = e.target.closest('.entry-del-btn');
       if (btn) {
         const idx = +btn.dataset.entryIdx;
-        deleteEntry(filtered[idx]);
+        deleteEntry(sortedEntries[idx]);
       }
     });
   }
@@ -909,11 +910,34 @@ function renderProjectsList() {
     el.innerHTML = '<div class="empty"><p>Нет проектов. Нажми + чтобы добавить.</p></div>';
     return;
   }
-  el.innerHTML = projects.map((p, i) => {
-    const chipCls = p.status==='На паузе' ? 'chip-paused' : p.status==='Завершён' ? 'chip-done' : 'chip-active';
+
+  // Последняя дата активности по каждому проекту
+  const lastActivity = {};
+  entries.forEach(e => {
+    const d = e.date;
+    if (!lastActivity[e.project] || d > lastActivity[e.project]) lastActivity[e.project] = d;
+  });
+
+  const isDone = p => {
+    const s = (p.status || '').toLowerCase();
+    return s.includes('завершен') || s.includes('завершён');
+  };
+
+  // Сортировка: сначала активные (по дате активности, новые сверху), потом завершённые
+  const sorted = [...projects].sort((a, b) => {
+    const aDone = isDone(a), bDone = isDone(b);
+    if (aDone !== bDone) return aDone ? 1 : -1;
+    const aDate = lastActivity[a.name] || a.dateStart || '';
+    const bDate = lastActivity[b.name] || b.dateStart || '';
+    return bDate.localeCompare(aDate);
+  });
+
+  el.innerHTML = sorted.map((p) => {
+    const origIdx = projects.indexOf(p);
+    const chipCls = isDone(p) ? 'chip-done' : (p.status||'').toLowerCase().includes('паузе') || (p.status||'').toLowerCase().includes('пауза') ? 'chip-paused' : 'chip-active';
     const subtitle = p.stage || p.description || '';
     return `
-      <div class="project-item" data-proj-idx="${i}">
+      <div class="project-item" data-proj-idx="${origIdx}">
         <div class="proj-row1">
           <span class="proj-name-big">${esc(p.name)}</span>
           <span class="status-chip ${chipCls}">${esc(p.status||'В процессе')}</span>
@@ -923,7 +947,7 @@ function renderProjectsList() {
     `;
   }).join('');
 
-  // Event delegation — надёжно на iOS/Telegram WebView
+  // Event delegation
   el.onclick = null;
   el.addEventListener('click', function handler(e) {
     const item = e.target.closest('[data-proj-idx]');
