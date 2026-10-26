@@ -1,0 +1,281 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>Трекинг времени</title>
+  <script src="https://telegram.org/js/telegram-web-app.js"></script>
+  <style>
+    /* ── Telegram theme tokens ── */
+    :root {
+      --bg:       var(--tg-theme-bg-color,            #ffffff);
+      --text:     var(--tg-theme-text-color,           #000000);
+      --hint:     var(--tg-theme-hint-color,           #888888);
+      --link:     var(--tg-theme-link-color,           #2481cc);
+      --btn:      var(--tg-theme-button-color,         #2481cc);
+      --btn-text: var(--tg-theme-button-text-color,    #ffffff);
+      --sec-bg:   var(--tg-theme-secondary-bg-color,   #f0f0f0);
+      --radius: 12px;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: -apple-system, 'Helvetica Neue', Arial, sans-serif;
+      font-size: 16px;
+      min-height: 100vh;
+      padding: 16px 16px 32px;
+    }
+
+    h1 {
+      font-size: 20px;
+      font-weight: 700;
+      margin-bottom: 20px;
+      color: var(--text);
+    }
+
+    .card {
+      background: var(--sec-bg);
+      border-radius: var(--radius);
+      padding: 4px 0;
+      margin-bottom: 16px;
+      overflow: hidden;
+    }
+
+    .field {
+      display: flex;
+      align-items: center;
+      padding: 0 16px;
+      min-height: 52px;
+      border-bottom: 1px solid rgba(128,128,128,0.15);
+    }
+    .field:last-child { border-bottom: none; }
+
+    .field label {
+      flex: 0 0 110px;
+      font-size: 15px;
+      color: var(--text);
+    }
+
+    .field input,
+    .field select,
+    .field textarea {
+      flex: 1;
+      background: transparent;
+      border: none;
+      outline: none;
+      font-size: 15px;
+      color: var(--text);
+      text-align: right;
+      appearance: none;
+      -webkit-appearance: none;
+    }
+
+    .field textarea {
+      text-align: left;
+      resize: none;
+      padding: 14px 0;
+      height: 80px;
+      line-height: 1.4;
+    }
+
+    .field select option { color: initial; background: initial; }
+
+    /* placeholder */
+    input::placeholder,
+    textarea::placeholder { color: var(--hint); }
+
+    /* date input fix */
+    input[type="date"]::-webkit-calendar-picker-indicator {
+      opacity: 0.4;
+      filter: invert(var(--tg-color-scheme, 0));
+    }
+
+    /* Hours row: big number */
+    #hours {
+      font-size: 22px;
+      font-weight: 600;
+      color: var(--btn);
+    }
+    .hours-unit {
+      font-size: 14px;
+      color: var(--hint);
+      margin-left: 4px;
+    }
+
+    /* Submit button */
+    .submit-btn {
+      width: 100%;
+      padding: 16px;
+      background: var(--btn);
+      color: var(--btn-text);
+      border: none;
+      border-radius: var(--radius);
+      font-size: 17px;
+      font-weight: 600;
+      cursor: pointer;
+      margin-top: 8px;
+      transition: opacity .15s;
+    }
+    .submit-btn:active { opacity: 0.75; }
+    .submit-btn:disabled { opacity: 0.4; cursor: default; }
+
+    /* Toast */
+    .toast {
+      position: fixed;
+      bottom: 32px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: rgba(0,0,0,0.75);
+      color: #fff;
+      padding: 10px 20px;
+      border-radius: 20px;
+      font-size: 14px;
+      pointer-events: none;
+      opacity: 0;
+      transition: opacity .25s;
+      white-space: nowrap;
+    }
+    .toast.show { opacity: 1; }
+
+    /* Loading state */
+    .spinner {
+      display: inline-block;
+      width: 18px; height: 18px;
+      border: 2px solid rgba(255,255,255,0.4);
+      border-top-color: #fff;
+      border-radius: 50%;
+      animation: spin .6s linear infinite;
+      vertical-align: middle;
+      margin-right: 6px;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+  </style>
+</head>
+<body>
+
+<h1>⏱ Трекинг времени</h1>
+
+<div class="card">
+  <div class="field">
+    <label>Дата</label>
+    <input type="date" id="date">
+  </div>
+  <div class="field">
+    <label>Часов</label>
+    <input type="number" id="hours" min="0" max="24" step="0.5" placeholder="0">
+    <span class="hours-unit">ч</span>
+  </div>
+  <div class="field">
+    <label>Проект</label>
+    <select id="project">
+      <option value="">Загрузка...</option>
+    </select>
+  </div>
+</div>
+
+<div class="card">
+  <div class="field" style="align-items: flex-start;">
+    <textarea id="description" placeholder="Что сделал..."></textarea>
+  </div>
+</div>
+
+<button class="submit-btn" id="submitBtn" onclick="submit()">Сохранить</button>
+
+<div class="toast" id="toast"></div>
+
+<script>
+// ── НАСТРОЙКА — замени URL после деплоя Web App ───────────
+const APPS_SCRIPT_URL = 'PASTE_YOUR_WEB_APP_URL_HERE';
+// ──────────────────────────────────────────────────────────
+
+const tg = window.Telegram.WebApp;
+tg.ready();
+tg.expand();
+
+// Ставим сегодняшнюю дату
+const today = new Date();
+document.getElementById('date').value = today.toISOString().slice(0, 10);
+
+// ── Загружаем проекты ──────────────────────────────────────
+async function loadProjects() {
+  const sel = document.getElementById('project');
+  try {
+    const res  = await fetch(APPS_SCRIPT_URL + '?action=projects');
+    const json = await res.json();
+    const list = json.projects || [];
+
+    sel.innerHTML = '<option value="">— выбери проект —</option>';
+    list.forEach(p => {
+      const opt = document.createElement('option');
+      opt.value = opt.textContent = p;
+      sel.appendChild(opt);
+    });
+  } catch (e) {
+    sel.innerHTML = '<option value="">⚠️ Ошибка загрузки</option>';
+  }
+}
+loadProjects();
+
+// ── Сабмит ─────────────────────────────────────────────────
+async function submit() {
+  const date    = document.getElementById('date').value;
+  const hours   = document.getElementById('hours').value;
+  const project = document.getElementById('project').value;
+  const desc    = document.getElementById('description').value;
+
+  if (!date || !hours || !project) {
+    tg.HapticFeedback.notificationOccurred('error');
+    showToast('⚠️ Заполни дату, часы и проект');
+    return;
+  }
+
+  const btn = document.getElementById('submitBtn');
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner"></span>Сохраняю...';
+
+  try {
+    const payload = JSON.stringify({ date, hours, project, description: desc });
+
+    const res = await fetch(APPS_SCRIPT_URL, {
+      method:  'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body:    payload,
+    });
+
+    const json = await res.json();
+    if (json.error) throw new Error(json.error);
+
+    tg.HapticFeedback.notificationOccurred('success');
+    showToast('✅ Сохранено!');
+
+    // Сброс формы
+    document.getElementById('hours').value = '';
+    document.getElementById('description').value = '';
+    document.getElementById('project').value = '';
+
+    // Закрыть Mini App через 1.2 сек
+    setTimeout(() => tg.close(), 1200);
+
+  } catch (e) {
+    tg.HapticFeedback.notificationOccurred('error');
+    showToast('❌ Ошибка: ' + e.message);
+    btn.disabled = false;
+    btn.textContent = 'Сохранить';
+  }
+}
+
+function showToast(msg) {
+  const el = document.getElementById('toast');
+  el.textContent = msg;
+  el.classList.add('show');
+  setTimeout(() => el.classList.remove('show'), 2500);
+}
+
+// Главная кнопка Telegram (опционально)
+tg.MainButton.setText('Сохранить').show().onClick(submit);
+</script>
+</body>
+</html>
