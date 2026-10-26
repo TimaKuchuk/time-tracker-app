@@ -494,7 +494,7 @@ body {
       <div class="stat-grid">
         <div class="stat-card">
           <div class="stat-val" id="stat-total">—</div>
-          <div class="stat-label">Всего часов</div>
+          <div class="stat-label" id="stat-label-total">Всего часов</div>
         </div>
         <div class="stat-card">
           <div class="stat-val" id="stat-days">—</div>
@@ -769,6 +769,17 @@ async function loadEntries() {
 // ── Analytics ─────────────────────────────────────
 const MONTHS_RU = ['Январь','Февраль','Март','Апрель','Май','Июнь','Июль','Август','Сентябрь','Октябрь','Ноябрь','Декабрь'];
 
+// Подсчёт рабочих дней (пн-пт) в заданном месяце
+function countWorkdays(year, month) {
+  const days = new Date(year, month + 1, 0).getDate(); // кол-во дней в месяце
+  let count = 0;
+  for (let d = 1; d <= days; d++) {
+    const dow = new Date(year, month, d).getDay(); // 0=вс, 6=сб
+    if (dow !== 0 && dow !== 6) count++;
+  }
+  return count;
+}
+
 function setPeriod(p, el) {
   curPeriod = p;
   curMonthOffset = 0;
@@ -821,7 +832,21 @@ function renderAnalytics() {
   // Stats
   const total = filtered.reduce((s,e) => s + Number(e.hours), 0);
   const days  = new Set(filtered.map(e => e.date)).size;
-  document.getElementById('stat-total').textContent = fmtHrs(total);
+
+  // Норма часов — только для режима "месяц"
+  if (curPeriod === 'month') {
+    const now = new Date();
+    const d = new Date(now.getFullYear(), now.getMonth() + curMonthOffset, 1);
+    const workdays = countWorkdays(d.getFullYear(), d.getMonth());
+    const norm = workdays * 4;
+    const pct  = norm > 0 ? Math.round(total / norm * 100) : 0;
+    document.getElementById('stat-total').innerHTML =
+      `${fmtHrs(total)}<span style="font-size:15px;color:var(--hint);font-weight:500"> / ${fmtHrs(norm)}</span>`;
+    document.getElementById('stat-label-total').textContent = `Часов (${pct}%)`;
+  } else {
+    document.getElementById('stat-total').textContent = fmtHrs(total);
+    document.getElementById('stat-label-total').textContent = 'Всего часов';
+  }
   document.getElementById('stat-days').textContent  = days;
 
   // Chart — hours by project
