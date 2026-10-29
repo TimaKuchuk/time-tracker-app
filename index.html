@@ -584,6 +584,28 @@ body {
 const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbxS6PRj4w9SuTj9M1Q5W3RKdcq7N9ayAKl08Ow5JrzZHs4rsk-sNuSFIp6LefL2fULHrw/exec';
 // ═══════════════════════════════════════════════════
 
+// JSONP-запрос к Apps Script — единственный надёжный способ в Telegram WebView
+// (script-тег следует редиректам автоматически, CORS не мешает)
+function gasRequest(params) {
+  return new Promise((resolve, reject) => {
+    const cb = '__gas_' + Date.now() + '_' + Math.random().toString(36).slice(2);
+    params.set('callback', cb);
+    const script = document.createElement('script');
+    const timer = setTimeout(() => {
+      cleanup(); reject(new Error('Timeout'));
+    }, 15000);
+    function cleanup() {
+      clearTimeout(timer);
+      delete window[cb];
+      script.remove();
+    }
+    window[cb] = (data) => { cleanup(); resolve(data); };
+    script.onerror = () => { cleanup(); reject(new Error('Нет связи')); };
+    script.src = APPS_SCRIPT_URL + '?' + params.toString();
+    document.head.appendChild(script);
+  });
+}
+
 const tg = window.Telegram.WebApp;
 tg.ready();
 tg.expand();
@@ -710,11 +732,11 @@ async function saveEntry() {
     const params = new URLSearchParams({
       action: 'add', date, hours: hoursVal, project: selProject, description: desc
     });
-    // no-cors: обходит блокировку редиректа в Telegram WebView (ответ не читаем, но запрос доходит)
-    await fetch(APPS_SCRIPT_URL + '?' + params.toString(), { mode: 'no-cors' });
+    const json = await gasRequest(params);
+    if (json.error) throw new Error(json.error);
 
-    // Оптимистичный UI — сразу показываем успех
-    entries.unshift({ date, hours: hoursVal, project: selProject, description: desc });
+    // Успех подтверждён сервером — обновляем данные из таблицы
+    await loadEntries();
     tg.HapticFeedback?.notificationOccurred?.('success');
     document.getElementById('add-form').style.display = 'none';
     const s = document.getElementById('add-success');
@@ -747,16 +769,14 @@ function resetForm() {
 // ── Load data ─────────────────────────────────────
 async function loadProjects() {
   try {
-    const res  = await fetch(APPS_SCRIPT_URL + '?action=projects');
-    const json = await res.json();
+    const json = await gasRequest(new URLSearchParams({ action: 'projects' }));
     projects = json.projects || [];
   } catch(e) { projects = []; }
 }
 
 async function loadEntries() {
   try {
-    const res  = await fetch(APPS_SCRIPT_URL + '?action=entries');
-    const json = await res.json();
+    const json = await gasRequest(new URLSearchParams({ action: 'entries' }));
     entries = (json.entries || []).reverse(); // newest first
   } catch(e) { entries = []; }
 }
@@ -1027,7 +1047,8 @@ async function saveProject() {
       action: isNew ? 'addProject' : 'updateProject',
       name, stage, description: desc, status, dateStart, dateEnd
     });
-    await fetch(APPS_SCRIPT_URL + '?' + params.toString(), { mode: 'no-cors' });
+    const json = await gasRequest(params);
+    if (json.error) throw new Error(json.error);
 
     // Update local state
     if (isNew) {
@@ -1055,7 +1076,8 @@ async function deleteEntry(entry) {
   if (!confirm(`Удалить запись?\n${entry.project} · ${fmtDate(entry.date)} · ${fmtHrs(Number(entry.hours))}`)) return;
   try {
     const params = new URLSearchParams({ action: 'deleteEntry', date: entry.date, project: entry.project, hours: entry.hours });
-    await fetch(APPS_SCRIPT_URL + '?' + params.toString(), { mode: 'no-cors' });
+    const json = await gasRequest(params);
+    if (json.error) throw new Error(json.error);
     // удаляем из локального массива
     const idx = entries.findIndex(e => e.date === entry.date && e.project === entry.project && String(e.hours) === String(entry.hours));
     if (idx !== -1) entries.splice(idx, 1);
@@ -1078,7 +1100,8 @@ async function deleteProject() {
 
   try {
     const params = new URLSearchParams({ action: 'deleteProject', name: editingProject });
-    await fetch(APPS_SCRIPT_URL + '?' + params.toString(), { mode: 'no-cors' });
+    const json = await gasRequest(params);
+    if (json.error) throw new Error(json.error);
 
     projects = projects.filter(p => p.name !== editingProject);
     renderProjectsList();
