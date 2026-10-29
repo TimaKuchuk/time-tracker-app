@@ -518,6 +518,7 @@ body {
       <div class="card" id="projects-list">
         <div class="empty"><p>Загрузка...</p></div>
       </div>
+      <p style="text-align:center;font-size:11px;color:var(--hint);margin-top:16px;opacity:.5;">v2.4</p>
     </div>
 
   </div><!-- /pages -->
@@ -914,14 +915,13 @@ function renderAnalytics() {
       </div>
     `).join('');
     // event delegation для кнопок удаления
-    listEl.onclick = null;
-    listEl.addEventListener('click', function h(e) {
+    listEl.onclick = function(e) {
       const btn = e.target.closest('.entry-del-btn');
       if (btn) {
         const idx = +btn.dataset.entryIdx;
         deleteEntry(sortedEntries[idx]);
       }
-    });
+    };
   }
 }
 
