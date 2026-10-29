@@ -730,7 +730,7 @@ async function saveEntry() {
     renderAnalytics();
   } catch(e) {
     tg.HapticFeedback?.notificationOccurred?.('error');
-    showToast('❌ ' + e.message);
+    showToast('❌ v3.1 | ' + e.message);
     btn.disabled = false;
     btn.textContent = 'Сохранить';
   }
