@@ -584,8 +584,7 @@ body {
 const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbxS6PRj4w9SuTj9M1Q5W3RKdcq7N9ayAKl08Ow5JrzZHs4rsk-sNuSFIp6LefL2fULHrw/exec';
 // ═══════════════════════════════════════════════════
 
-// JSONP-запрос к Apps Script — единственный надёжный способ в Telegram WebView
-// (script-тег следует редиректам автоматически, CORS не мешает)
+// JSONP — для чтения данных (projects, entries)
 function gasRequest(params) {
   return new Promise((resolve, reject) => {
     const cb = '__gas_' + Date.now() + '_' + Math.random().toString(36).slice(2);
@@ -604,6 +603,15 @@ function gasRequest(params) {
     script.src = APPS_SCRIPT_URL + '?' + params.toString();
     document.head.appendChild(script);
   });
+}
+
+// no-cors fetch — для записи (add, delete, addProject и т.д.)
+// Данные сохраняются, ответ прочитать нельзя — ждём и перечитываем
+async function gasWrite(params) {
+  const url = APPS_SCRIPT_URL + '?' + params.toString();
+  await fetch(url, { method: 'GET', mode: 'no-cors' });
+  // Ждём чтобы Apps Script успел записать
+  await new Promise(r => setTimeout(r, 1500));
 }
 
 const tg = window.Telegram.WebApp;
@@ -732,10 +740,9 @@ async function saveEntry() {
     const params = new URLSearchParams({
       action: 'add', date, hours: hoursVal, project: selProject, description: desc
     });
-    const json = await gasRequest(params);
-    if (json.error) throw new Error(json.error);
+    await gasWrite(params);
 
-    // Успех подтверждён сервером — обновляем данные из таблицы
+    // Перечитываем данные из таблицы
     await loadEntries();
     tg.HapticFeedback?.notificationOccurred?.('success');
     document.getElementById('add-form').style.display = 'none';
@@ -1047,16 +1054,8 @@ async function saveProject() {
       action: isNew ? 'addProject' : 'updateProject',
       name, stage, description: desc, status, dateStart, dateEnd
     });
-    const json = await gasRequest(params);
-    if (json.error) throw new Error(json.error);
-
-    // Update local state
-    if (isNew) {
-      projects.push({ name, stage, description: desc, status, dateStart, dateEnd });
-    } else {
-      const p = projects.find(x => x.name === editingProject);
-      if (p) { p.stage = stage; p.description = desc; p.status = status; p.dateStart = dateStart; p.dateEnd = dateEnd; }
-    }
+    await gasWrite(params);
+    await loadProjects();
 
     renderProjectsList();
     tg.HapticFeedback?.notificationOccurred?.('success');
@@ -1076,11 +1075,8 @@ async function deleteEntry(entry) {
   if (!confirm(`Удалить запись?\n${entry.project} · ${fmtDate(entry.date)} · ${fmtHrs(Number(entry.hours))}`)) return;
   try {
     const params = new URLSearchParams({ action: 'deleteEntry', date: entry.date, project: entry.project, hours: entry.hours });
-    const json = await gasRequest(params);
-    if (json.error) throw new Error(json.error);
-    // удаляем из локального массива
-    const idx = entries.findIndex(e => e.date === entry.date && e.project === entry.project && String(e.hours) === String(entry.hours));
-    if (idx !== -1) entries.splice(idx, 1);
+    await gasWrite(params);
+    await loadEntries();
     tg.HapticFeedback?.notificationOccurred?.('success');
     showToast('🗑 Запись удалена');
     renderAnalytics();
@@ -1100,9 +1096,8 @@ async function deleteProject() {
 
   try {
     const params = new URLSearchParams({ action: 'deleteProject', name: editingProject });
-    const json = await gasRequest(params);
-    if (json.error) throw new Error(json.error);
-
+    await gasWrite(params);
+    await loadProjects();
     projects = projects.filter(p => p.name !== editingProject);
     renderProjectsList();
     tg.HapticFeedback?.notificationOccurred?.('success');
