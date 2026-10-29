@@ -710,7 +710,8 @@ async function saveEntry() {
     const params = new URLSearchParams({
       action: 'add', date, hours: hoursVal, project: selProject, description: desc
     });
-    const res  = await fetch(APPS_SCRIPT_URL, { method: 'POST', body: params });
+    const res  = await fetch(APPS_SCRIPT_URL + '?' + params.toString());
+    if (!res.ok) throw new Error('HTTP ' + res.status);
     const json = await res.json();
     if (json.error) throw new Error(json.error);
 
@@ -1032,7 +1033,7 @@ async function saveProject() {
       action: isNew ? 'addProject' : 'updateProject',
       name, stage, description: desc, status, dateStart, dateEnd
     });
-    const res  = await fetch(APPS_SCRIPT_URL, { method: 'POST', body: params });
+    const res  = await fetch(APPS_SCRIPT_URL + '?' + params.toString());
     const json = await res.json();
     if (json.error) throw new Error(json.error);
 
@@ -1062,7 +1063,7 @@ async function deleteEntry(entry) {
   if (!confirm(`Удалить запись?\n${entry.project} · ${fmtDate(entry.date)} · ${fmtHrs(Number(entry.hours))}`)) return;
   try {
     const params = new URLSearchParams({ action: 'deleteEntry', date: entry.date, project: entry.project, hours: entry.hours });
-    const res  = await fetch(APPS_SCRIPT_URL, { method: 'POST', body: params });
+    const res  = await fetch(APPS_SCRIPT_URL + '?' + params.toString());
     const json = await res.json();
     if (json.error) throw new Error(json.error);
     // удаляем из локального массива
@@ -1087,7 +1088,7 @@ async function deleteProject() {
 
   try {
     const params = new URLSearchParams({ action: 'deleteProject', name: editingProject });
-    const res  = await fetch(APPS_SCRIPT_URL, { method: 'POST', body: params });
+    const res  = await fetch(APPS_SCRIPT_URL + '?' + params.toString());
     const json = await res.json();
     if (json.error) throw new Error(json.error);
 
